@@ -1,10 +1,13 @@
 package proxy
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -48,7 +51,7 @@ func NewProxy(cache string) http.Handler {
 				}
 				// ignore the error, incorrect tag may be given
 				// forward to inner.ServeHTTP
-				if err := downloadMod(modPath, version); err != nil {
+				if err := downloadMod(w, r, modPath, version, suffix); err != nil {
 					errLogger.Printf("download get err %s", err)
 				}
 			}
@@ -73,10 +76,14 @@ func NewProxy(cache string) http.Handler {
 					errLogger.Printf("latest failed: %v", err)
 					return
 				}
-				if err := downloadMod(modPath, rev.Version); err != nil {
+				if err := downloadMod(w, r, modPath, rev.Version, ""); err != nil {
 					errLogger.Printf("download get err %s", err)
 				}
-
+				err = json.NewEncoder(w).Encode(rev)
+				if err != nil {
+					errLogger.Printf("json encode failed %s", err)
+				}
+				return
 			}
 
 			if strings.HasSuffix(r.URL.Path, "/@v/list") {
@@ -89,24 +96,57 @@ func NewProxy(cache string) http.Handler {
 	})
 }
 
-func downloadMod(modPath, version string) error {
-	if _, err := modfetch.InfoFile(modPath, version); err != nil {
+type goModule struct {
+	Path     string `json:"path"`     // module path
+	Version  string `json:"version"`  // module version
+	Error    string `json:"error"`    // error loading module
+	Info     string `json:"info"`     // absolute path to cached .info file
+	GoMod    string `json:"goMod"`    // absolute path to cached .mod file
+	Zip      string `json:"zip"`      // absolute path to cached .zip file
+	Dir      string `json:"dir"`      // absolute path to cached source root directory
+	Sum      string `json:"sum"`      // checksum for path, version (as in go.sum)
+	GoModSum string `json:"goModSum"` // checksum for go.mod (as in go.sum)
+}
+
+func downloadMod(w http.ResponseWriter, r *http.Request, path, version, suffix string) error {
+	cmd := exec.Command("go", "mod", "download", "-json", path+"@"+version)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
 		return err
 	}
-	if _, err := modfetch.GoModFile(modPath, version); err != nil {
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Fprintf(os.Stderr, "goproxy: download %s stderr:\n%s", path, string(stderr.Bytes()))
 		return err
 	}
-	if _, err := modfetch.GoModSum(modPath, version); err != nil {
+
+	var m goModule
+	if err := json.NewDecoder(strings.NewReader(string(stdout.Bytes()))).Decode(&m); err != nil {
 		return err
 	}
-	mod := module.Version{Path: modPath, Version: version}
-	if _, err := modfetch.DownloadZip(mod); err != nil {
-		return err
+	var p string
+	if suffix == "" {
+		return nil
 	}
-	if a, err := modfetch.Download(mod); err != nil {
-		return err
-	} else {
-		log.Printf("goproxy: download %s@%s to dir %s\n", modPath, version, a)
+	if suffix == ".info" {
+		p = m.Info
 	}
+	if suffix == ".mod" {
+		p = m.GoMod
+	}
+	if suffix == ".zip" {
+		p = m.Zip
+	}
+	p = strings.TrimPrefix(p, cacheDir)
+	h := r.Host
+	scheme := "http:"
+	if r.TLS != nil {
+		scheme = "https:"
+	}
+	url := fmt.Sprintf("%s//%s/%s", scheme, h, p)
+	http.Redirect(w, r, url, 302)
 	return nil
 }
