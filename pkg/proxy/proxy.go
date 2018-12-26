@@ -11,6 +11,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/goproxyio/goproxy/pkg/modfetch"
 	"github.com/goproxyio/goproxy/pkg/modfetch/codehost"
@@ -111,6 +113,7 @@ type goModule struct {
 func downloadMod(w http.ResponseWriter, r *http.Request, path, version, suffix string) error {
 	cmd := exec.Command("go", "mod", "download", "-json", path+"@"+version)
 	var stdout, stderr bytes.Buffer
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -118,9 +121,12 @@ func downloadMod(w http.ResponseWriter, r *http.Request, path, version, suffix s
 		return err
 	}
 
-	if err := cmd.Wait(); err != nil {
-		fmt.Fprintf(os.Stderr, "goproxy: download %s stderr:\n%s", path, string(stderr.Bytes()))
+	err, isTimeout := cmdRunWithTimeout(cmd, time.Duration(60)*time.Second)
+	if err != nil {
 		return err
+	}
+	if isTimeout {
+		return fmt.Errorf("mod download timeout")
 	}
 
 	var m goModule
@@ -149,4 +155,30 @@ func downloadMod(w http.ResponseWriter, r *http.Request, path, version, suffix s
 	url := fmt.Sprintf("%s//%s/%s", scheme, h, p)
 	http.Redirect(w, r, url, 302)
 	return nil
+}
+
+func cmdRunWithTimeout(cmd *exec.Cmd, timeout time.Duration) (error, bool) {
+	done := make(chan error)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	var err error
+	select {
+	case <-time.After(timeout):
+
+		go func() {
+			<-done // allow goroutine to exit
+		}()
+
+		pgid, err := syscall.Getpgid(cmd.Process.Pid)
+		if err == nil {
+			err = syscall.Kill(-pgid, 15)
+		} else {
+			err = cmd.Process.Kill()
+		}
+		return err, true
+	case err = <-done:
+		return err, false
+	}
 }
