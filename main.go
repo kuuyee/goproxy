@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -74,6 +75,38 @@ func main() {
 
 	go func() {
 		err := server.ListenAndServe()
+		if err != nil {
+			errCh <- err
+		}
+	}()
+
+
+	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		path := request.RequestURI
+		u := ""
+		if strings.HasPrefix(path, "/github.com") {
+			u += "http://" + listen + path
+		} else {
+			u += "https://goproxy.io" + path
+		}
+
+		resp, err := http.Get(u)
+		if err != nil {
+			writer.Write([]byte(err.Error()))
+			return
+		}
+		defer resp.Body.Close()
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			writer.Write([]byte(err.Error()))
+			return
+		}
+
+		writer.Write(b)
+	})
+
+	go func() {
+		err := http.ListenAndServe(":8080", nil)
 		if err != nil {
 			errCh <- err
 		}

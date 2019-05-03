@@ -1,6 +1,7 @@
 .PHONY: build generate image clean test
 
 export GO111MODULE=on
+export CGO_ENABLED=0
 
 all: build
 
