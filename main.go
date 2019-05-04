@@ -80,11 +80,10 @@ func main() {
 		}
 	}()
 
-
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		path := request.RequestURI
 		u := ""
-		if strings.HasPrefix(path, "/github.com") {
+		if strings.HasPrefix(path, "/github.com/kuuyee") {
 			u += "http://" + listen + path
 		} else {
 			u += "https://goproxy.io" + path
