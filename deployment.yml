@@ -57,6 +57,6 @@ spec:
   type: NodePort
   ports:
     - port: 80
-      nodePort: 38083
+      targetPort: 8080
   selector:
     name: <P_NAME>
