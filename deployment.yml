@@ -56,8 +56,8 @@ metadata:
 spec:
   type: NodePort
   ports:
-    - port: 40000
-      nodePort: 40000
+    - port: 80
+      nodePort: 39999
       targetPort: 8080
   selector:
     name: <P_NAME>
