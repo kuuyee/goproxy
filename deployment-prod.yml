@@ -1,0 +1,63 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: <P_NAME>
+spec:
+  replicas: 1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: <P_NAME>
+    spec:
+      imagePullSecrets:
+        - name: registry-secret
+      containers:
+        - name: <P_NAME>
+          image: <IMAGE_TAG>
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 4096Mi
+            requests:
+              cpu: 200m
+              memory: 200Mi
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GITHUB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: github-secret
+                  key: username
+            - name: GITHUB_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: github-secret
+                  key: password
+          volumeMounts:
+            - name: go-pkg-cache
+              mountPath: /go
+      volumes:
+        - name: go-pkg-cache
+          hostPath:
+            path: /export/Data/go_pkg_cache
+            #server: 172.17.0.14
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: <P_NAME>-service
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      nodePort: 39999
+      targetPort: 8080
+  selector:
+    name: <P_NAME>
