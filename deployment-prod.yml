@@ -48,6 +48,8 @@ spec:
             path: /export/Data/go_pkg_cache
             #server: 172.17.0.14
       restartPolicy: Always
+      nodeSelector:
+        label_key_229: label_value_229
 ---
 apiVersion: v1
 kind: Service
