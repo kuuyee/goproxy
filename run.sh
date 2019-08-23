@@ -2,8 +2,8 @@
 
 cat <<EOF > ~/.netrc
 machine github.com
-    login $GITHUB_USER
-    password $GITHUB_PWD
+    login a3V1eWVlCg==
+    password bGludXhnejExMDQxMQo=
 EOF
 
 export GITHUB_USER=
